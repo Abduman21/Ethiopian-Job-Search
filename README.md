@@ -4,6 +4,8 @@ A modern job-search platform designed to connect Ethiopian job seekers with empl
 
 The platform provides separate experiences for **job seekers** and **employers**, including authentication, job discovery, job management, saved jobs, applications, and notifications.
 
+🔗 **Live Demo:** https://ethiopian-job-search.vercel.app/
+
 ---
 
 ## 🚀 Features
@@ -15,7 +17,6 @@ The platform provides separate experiences for **job seekers** and **employers**
 * Browse available job opportunities
 * Search jobs by title, company, or description
 * View job information such as:
-
   * Location
   * Job type
   * Salary range
@@ -212,16 +213,17 @@ Previews the production build locally.
 
 ## 📸 Screenshots
 
-Screenshots of the application will be added here to demonstrate:
+### 🏠 Landing Page
 
-* Login and registration
-* Job seeker dashboard
-* Job search
-* Employer dashboard
-* Job posting
-* Job management
-* Applications
-* Notifications
+![Ethio Jobs Landing Page](Screenshot%202026-09-24%20183732.png)
+
+### 🔐 Sign In
+
+![Ethio Jobs Sign In](Screenshot%202026-09-24%20183752.png)
+
+### 🔎 Job Search
+
+![Ethio Jobs Job Search](Screenshot%202026-09-25%20193157.png)
 
 ---
 
@@ -247,7 +249,6 @@ Planned improvements include:
 * Application status tracking
 * Email notifications
 * Better mobile responsiveness
-* Production deployment
 
 ---
 
