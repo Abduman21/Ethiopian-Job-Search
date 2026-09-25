@@ -1,37 +1,55 @@
-import { useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
-import { useAuth } from '../../contexts/AuthContext';
-import { Briefcase } from 'lucide-react';
+import { useState } from "react";
+import { supabase } from "../../lib/supabase";
+import { useAuth } from "../../contexts/AuthContext";
+import { Briefcase, X, Plus, ArrowLeft } from "lucide-react";
+import { useToast } from "../Toast";
 
 export const PostJob = ({ onSuccess }: { onSuccess: () => void }) => {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [skillInput, setSkillInput] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    requirements: '',
-    location: '',
-    job_type: 'full_time',
-    salary_min: '',
-    salary_max: '',
-    skills_required: '',
-    experience_required: '0',
-    deadline: '',
+    title: "",
+    description: "",
+    requirements: "",
+    location: "",
+    job_type: "full_time",
+    salary_min: "",
+    salary_max: "",
+    experience_required: "0",
+    deadline: "",
   });
+
+  const addSkill = () => {
+    const trimmed = skillInput.trim();
+    if (trimmed && !skills.includes(trimmed)) {
+      setSkills([...skills, trimmed]);
+      setSkillInput("");
+    }
+  };
+
+  const removeSkill = (skill: string) => {
+    setSkills(skills.filter((s) => s !== skill));
+  };
+
+  const handleSkillKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addSkill();
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
     setLoading(true);
-    setError('');
-
     try {
-      await addDoc(collection(db, 'jobs'), {
-        employer_id: user.uid,
+      const { error } = await supabase.from("jobs").insert({
+        employer_id: user.id,
         title: formData.title,
         description: formData.description,
         requirements: formData.requirements || null,
@@ -39,104 +57,108 @@ export const PostJob = ({ onSuccess }: { onSuccess: () => void }) => {
         job_type: formData.job_type,
         salary_min: formData.salary_min ? parseInt(formData.salary_min) : null,
         salary_max: formData.salary_max ? parseInt(formData.salary_max) : null,
-        skills_required: formData.skills_required ? formData.skills_required.split(',').map(s => s.trim()) : [],
+        skills_required: skills,
         experience_required: parseInt(formData.experience_required),
-        status: 'active',
+        status: "active",
         deadline: formData.deadline || null,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp(),
       });
 
-      setFormData({
-        title: '',
-        description: '',
-        requirements: '',
-        location: '',
-        job_type: 'full_time',
-        salary_min: '',
-        salary_max: '',
-        skills_required: '',
-        experience_required: '0',
-        deadline: '',
-      });
+      if (error) throw error;
 
+      showToast("Job posted successfully!", "success");
       onSuccess();
     } catch (err: any) {
-      console.error('Error posting job:', err);
-      setError(err.message || 'Failed to post job');
+      console.error("Error posting job:", err);
+      showToast(err.message || "Failed to post job", "error");
     } finally {
       setLoading(false);
     }
   };
 
+
+  const field = (id: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setFormData({ ...formData, [id]: e.target.value });
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <div className="flex items-center mb-6">
-          <Briefcase className="w-8 h-8 text-emerald-600 mr-3" />
-          <h2 className="text-3xl font-bold text-gray-800">Post a New Job</h2>
+      <button
+        onClick={onSuccess}
+        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to Manage Jobs
+      </button>
+
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <Briefcase className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-white">Post a New Job</h2>
+              <p className="text-emerald-100 text-sm">Fill in the details to attract the right candidates</p>
+            </div>
+          </div>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          {/* Job Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Job Title *</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Job Title *</label>
             <input
               type="text"
               value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              onChange={field("title")}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
               placeholder="e.g., Senior Software Engineer"
             />
           </div>
 
+          {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Job Description *</label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={field("description")}
               required
               rows={5}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="Describe the job role and responsibilities..."
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all resize-none"
+              placeholder="Describe the role, responsibilities, and what you are looking for..."
             />
           </div>
 
+          {/* Requirements */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Requirements</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Requirements</label>
             <textarea
               value={formData.requirements}
-              onChange={(e) => setFormData({ ...formData, requirements: e.target.value })}
+              onChange={field("requirements")}
               rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="List the job requirements..."
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all resize-none"
+              placeholder="List qualifications, certifications, or specific requirements..."
             />
           </div>
 
+          {/* Location & Job Type */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Location</label>
               <input
                 type="text"
                 value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                onChange={field("location")}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
                 placeholder="e.g., Addis Ababa"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Job Type</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Job Type</label>
               <select
                 value={formData.job_type}
-                onChange={(e) => setFormData({ ...formData, job_type: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                onChange={field("job_type")}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
               >
                 <option value="full_time">Full Time</option>
                 <option value="part_time">Part Time</option>
@@ -146,60 +168,91 @@ export const PostJob = ({ onSuccess }: { onSuccess: () => void }) => {
             </div>
           </div>
 
+          {/* Salary */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Salary (ETB)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Min Salary (ETB)</label>
               <input
                 type="number"
                 value={formData.salary_min}
-                onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                onChange={field("salary_min")}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
                 placeholder="e.g., 50000"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Salary (ETB)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Max Salary (ETB)</label>
               <input
                 type="number"
                 value={formData.salary_max}
-                onChange={(e) => setFormData({ ...formData, salary_max: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                onChange={field("salary_max")}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
                 placeholder="e.g., 80000"
               />
             </div>
           </div>
 
+          {/* Skills */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Skills Required</label>
-            <input
-              type="text"
-              value={formData.skills_required}
-              onChange={(e) => setFormData({ ...formData, skills_required: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="e.g., React, TypeScript, Node.js (comma-separated)"
-            />
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Required Skills</label>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={skillInput}
+                onChange={(e) => setSkillInput(e.target.value)}
+                onKeyDown={handleSkillKeyDown}
+                className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
+                placeholder="Type a skill and press Enter or Add"
+              />
+              <button
+                type="button"
+                onClick={addSkill}
+                className="px-4 py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                Add
+              </button>
+            </div>
+            {skills.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {skills.map((skill) => (
+                  <span
+                    key={skill}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-sm font-medium border border-emerald-200"
+                  >
+                    {skill}
+                    <button
+                      type="button"
+                      onClick={() => removeSkill(skill)}
+                      className="text-emerald-400 hover:text-emerald-700 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Experience & Deadline */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Experience Required (years)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Experience Required (years)</label>
               <input
                 type="number"
                 value={formData.experience_required}
-                onChange={(e) => setFormData({ ...formData, experience_required: e.target.value })}
+                onChange={field("experience_required")}
                 min="0"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Application Deadline</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Application Deadline</label>
               <input
                 type="date"
                 value={formData.deadline}
-                onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                onChange={field("deadline")}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 focus:bg-white transition-all"
               />
             </div>
           </div>
@@ -207,9 +260,16 @@ export const PostJob = ({ onSuccess }: { onSuccess: () => void }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3.5 rounded-xl font-semibold hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
           >
-            {loading ? 'Posting Job...' : 'Post Job'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Posting Job...
+              </span>
+            ) : (
+              "Post Job"
+            )}
           </button>
         </form>
       </div>

@@ -1,20 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { 
-  User, 
-  onAuthStateChanged, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signOut as firebaseSignOut 
-} from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
+import type { Session, User } from '@supabase/supabase-js';
 
 export type Profile = {
   id: string;
   email: string;
   full_name: string;
   role: 'job_seeker' | 'employer' | 'admin';
-  created_at?: any;
+  created_at?: string;
 };
 
 type AuthContextType = {
@@ -42,66 +35,100 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const docRef = doc(db, 'profiles', userId);
-    const docSnap = await getDoc(docRef);
+  const fetchProfile = async (currentUser: User): Promise<Profile | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .single();
 
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as Profile;
+      if (!error && data) {
+        return data as Profile;
+      }
+
+      // Fallback: If profile row is missing in `profiles` table (e.g. account created before DB trigger),
+      // create it automatically using user metadata or defaults.
+      const fullName = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'User';
+      const role = (currentUser.user_metadata?.role as 'job_seeker' | 'employer') || 'job_seeker';
+
+      const fallbackProfile: Profile = {
+        id: currentUser.id,
+        email: currentUser.email || '',
+        full_name: fullName,
+        role: role,
+      };
+
+      // Try inserting into profiles table
+      await supabase.from('profiles').upsert(fallbackProfile);
+
+      if (role === 'job_seeker') {
+        await supabase.from('job_seeker_profiles').upsert({ user_id: currentUser.id });
+      } else if (role === 'employer') {
+        await supabase.from('employer_profiles').upsert({ user_id: currentUser.id, company_name: fullName });
+      }
+
+      return fallbackProfile;
+    } catch (err) {
+      console.error('Error fetching/creating profile:', err);
+      // Return a basic profile so user is never blocked from logging in
+      return {
+        id: currentUser.id,
+        email: currentUser.email || '',
+        full_name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'User',
+        role: (currentUser.user_metadata?.role as 'job_seeker' | 'employer') || 'job_seeker',
+      };
     }
-    return null;
   };
 
   const refreshProfile = async () => {
     if (user) {
-      const profileData = await fetchProfile(user.uid);
+      const profileData = await fetchProfile(user);
       setProfile(profileData);
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        const profileData = await fetchProfile(user.uid);
-        setProfile(profileData);
-      } else {
-        setProfile(null);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchProfile(currentUser).then(setProfile);
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event: string, session: Session | null) => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          const profileData = await fetchProfile(currentUser);
+          setProfile(profileData);
+        } else {
+          setProfile(null);
+        }
+        setLoading(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string, role: 'job_seeker' | 'employer') => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      // Create the user profile in Firestore
-      await setDoc(doc(db, 'profiles', user.uid), {
+      // Pass metadata so the DB trigger (handle_new_user) auto-creates the profile
+      const { error } = await supabase.auth.signUp({
         email,
-        full_name: fullName,
-        role,
-        created_at: serverTimestamp(),
+        password,
+        options: {
+          data: { full_name: fullName, role },
+        },
       });
-
-      // Initialize role-specific profile data
-      if (role === 'job_seeker') {
-        await setDoc(doc(db, 'job_seeker_profiles', user.uid), {
-          user_id: user.uid,
-          created_at: serverTimestamp(),
-        });
-      } else if (role === 'employer') {
-        await setDoc(doc(db, 'employer_profiles', user.uid), {
-          user_id: user.uid,
-          company_name: fullName,
-          created_at: serverTimestamp(),
-        });
-      }
-
-      await refreshProfile();
+      if (error) throw error;
+      // Profile + role-specific record are created by the DB trigger on auth.users insert
     } catch (error) {
       console.error('Sign up error:', error);
       throw error;
@@ -110,7 +137,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
     } catch (error) {
       console.error('Sign in error:', error);
       throw error;
@@ -119,7 +147,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     try {
-      await firebaseSignOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setProfile(null);
     } catch (error) {
       console.error('Sign out error:', error);
